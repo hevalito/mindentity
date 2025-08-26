@@ -1,5 +1,5 @@
 {
-  "name": "@mindnow/mindentity",
+  "name": "@hevalito/mindentity",
   "version": "0.1.0",
   "description": "A production-grade generative logo system for React and Next.js",
   "keywords": ["generative", "logo", "react", "nextjs", "svg", "canvas", "animation"],
