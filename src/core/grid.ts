@@ -1,16 +1,16 @@
 import type { GridCell, GridNode, GridDouble, ShapeType } from '../types.js';
 import { SeededRNG } from './rng.js';
 import { SHAPE_TYPES } from './shapes.js';
-import { pickGradient, GRADIENT_URLS } from './colors.js';
+import { pickGradient, GRADIENT_URLS, blendColors } from './colors.js';
 
 // Shape rotation mappings
-const SHAPE_ROTATIONS = {
-  CIRCLE_FULL: [0],
-  CIRCLE_HALF: [0, Math.PI],
-  CIRCLE_QURT: [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5],
-  DIAGONAL: [0, Math.PI * 0.5],
-  SQUARE: [0],
-  CROSS: [0],
+const SHAPE_ROTATIONS: Record<string, number[]> = {
+  [SHAPE_TYPES.CIRCLE_FULL]: [0],
+  [SHAPE_TYPES.CIRCLE_HALF]: [0, Math.PI],
+  [SHAPE_TYPES.CIRCLE_QURT]: [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5],
+  [SHAPE_TYPES.DIAGONAL]: [0, Math.PI * 0.5],
+  [SHAPE_TYPES.SQUARE]: [0],
+  [SHAPE_TYPES.CROSS]: [0],
 };
 
 // Color constants (will be set by setColors function)
@@ -42,6 +42,7 @@ interface GridResult {
 
 /**
  * Generate grid layout with cells, nodes, and doubles
+ * This exactly matches the original pe() function logic
  */
 export function generateGrid(
   rng: SeededRNG,
@@ -63,25 +64,27 @@ export function generateGrid(
   const cellWidth = (width - margin.x * 2 - (columns - 1) * columnGap) / columns;
   const cellHeight = (height - margin.y * 2 - (rows - 1) * rowGap) / rows;
 
-  const cellTypes = [SHAPE_TYPES.SQUARE, SHAPE_TYPES.CIRCLE_QURT];
+  const cellTypes = [SHAPE_TYPES.SQUARE as ShapeType, SHAPE_TYPES.CIRCLE_QURT as ShapeType];
   const totalCells = columns * rows;
   const cellGrid: (GridCell | undefined)[][] = [];
 
-  // Initialize cell grid
+  // Initialize cell grid - exactly like original
   for (let col = 0; col < columns; col++) {
     cellGrid[col] = [];
   }
 
-  // Generate basic cells
-  for (let i = 0; i < totalCells; i++) {
-    const column = Math.floor(i / rows);
-    const row = i % rows;
-    const x = margin.x + cellWidth * column + columnGap * column;
-    const y = margin.y + cellHeight * row + rowGap * row;
+  // Generate basic cells - exactly matching original pe() function
+  for (let u = 0; u < totalCells; u++) {
+    const s = Math.floor(u / columns); // column index (s in original)
+    const r = u % rows; // row index (r in original)  
+    const p = margin.x + cellWidth * s + columnGap * s; // x position
+    const m = margin.y + cellHeight * r + rowGap * r; // y position
 
-    const type = rng.pick(cellTypes) as ShapeType;
-    const rotation = rng.pick(SHAPE_ROTATIONS[type as keyof typeof SHAPE_ROTATIONS]) || 0;
-    const fill = type === SHAPE_TYPES.SQUARE
+    const E = rng.pick([SHAPE_TYPES.SQUARE, SHAPE_TYPES.CIRCLE_QURT])!;
+    const S = rng.pick(SHAPE_ROTATIONS[E]) || 0;
+    
+    // Exact fill logic from original
+    const A = E === SHAPE_TYPES.SQUARE
       ? rng.weightedSet([
           { value: COLORS.COLOR_20, weight: 80 },
           { value: pickGradient([], rng), weight: 20 },
@@ -91,193 +94,180 @@ export function generateGrid(
           { value: pickGradient([], rng), weight: 20 },
         ]) || COLORS.COLOR_70;
 
-    const cell: GridCell = {
-      index: i,
-      x,
-      y,
-      column,
-      row,
+    const b: GridCell = {
+      index: u,
+      x: p,
+      y: m,
+      column: s,
+      row: r,
       width: cellWidth,
       height: cellHeight,
-      type,
-      rotation,
-      fill,
+      type: E as ShapeType,
+      rotation: S,
+      fill: A,
     };
 
-    // Check if cell should be excluded
-    if (!(excludes[column] && excludes[column][row])) {
-      cellGrid[column][row] = cell;
-      cells.push(cell);
+    // Check exclusion exactly like original: excludes[s] && excludes[s][r]
+    if (!(excludes[s] && excludes[s][r])) {
+      cellGrid[s] || (cellGrid[s] = []);
+      cellGrid[s][r] = b;
+      cells.push(b);
     }
   }
 
   // Helper function to get cell at position
-  const getCell = (col: number, row: number): GridCell | undefined => {
-    if (cellGrid[col]) return cellGrid[col][row];
+  const i = (u: number, s: number): GridCell | undefined => {
+    if (cellGrid[u]) return cellGrid[u][s];
     return undefined;
   };
 
-  // Helper function to get cells in a 2x2 area
-  const getCells2x2 = (col: number, row: number): number[] => {
-    return [
-      getCell(col, row),
-      getCell(col + 1, row),
-      getCell(col + 1, row + 1),
-      getCell(col, row + 1),
-    ]
-      .filter(cell => cell !== undefined)
-      .map(cell => cell!.index);
+  // Helper function to get cells in a 2x2 area - exactly like original d() function
+  const d = (u: number, s: number): number[] => {
+    return [i(u, s), i(u + 1, s), i(u + 1, s + 1), i(u, s + 1)]
+      .filter(r => r !== undefined)
+      .map(r => r!.index);
   };
 
-  // Generate nodes (2x2 areas)
-  for (let i = 0; i < totalCells; i++) {
-    const column = Math.floor(i / rows);
-    const row = i % rows;
-    const x = margin.x + cellWidth * column + columnGap * column;
-    const y = margin.y + cellHeight * row + rowGap * row;
+  // Generate nodes (2x2 areas) - exactly matching original
+  for (let u = 0; u < totalCells; u++) {
+    const s = Math.floor(u / columns);
+    const r = u % rows;
+    const p = margin.x + cellWidth * s + columnGap * s;
+    const m = margin.y + cellHeight * r + rowGap * r;
 
-    if (column < columns - 1 && row < rows - 1) {
-      const nodeTypes = [SHAPE_TYPES.CROSS, SHAPE_TYPES.CIRCLE_FULL, SHAPE_TYPES.DIAGONAL];
-      const type = rng.pick(nodeTypes) as ShapeType;
-      const rotation = rng.pick(SHAPE_ROTATIONS[type]);
+    if (s < columns - 1 && r < rows - 1) {
+      const E = rng.pick([
+        SHAPE_TYPES.CROSS,
+        SHAPE_TYPES.CIRCLE_FULL,
+        SHAPE_TYPES.DIAGONAL,
+      ])!;
+      const S = rng.pick(SHAPE_ROTATIONS[E]) || 0;
 
-      const excludedGradients: string[] = [];
-      if (type === SHAPE_TYPES.DIAGONAL) {
-        if (rotation === 0) {
-          excludedGradients.push(GRADIENT_URLS.TOP_RIGHT, GRADIENT_URLS.BOTTOM_LEFT);
+      let A: string[] = [];
+      if (E === SHAPE_TYPES.DIAGONAL) {
+        if (S === 0) {
+          A.push(GRADIENT_URLS.TOP_RIGHT, GRADIENT_URLS.BOTTOM_LEFT);
         } else {
-          excludedGradients.push(GRADIENT_URLS.TOP_LEFT, GRADIENT_URLS.BOTTOM_RIGHT);
+          A.push(GRADIENT_URLS.TOP_LEFT, GRADIENT_URLS.BOTTOM_RIGHT);
         }
       }
 
-      const fill = type === SHAPE_TYPES.DIAGONAL
+      const b = E === SHAPE_TYPES.DIAGONAL
         ? rng.weightedSet([
             { value: COLORS.COLOR_10, weight: 80 },
-            { value: pickGradient(excludedGradients, rng), weight: 20 },
+            { value: pickGradient(A, rng), weight: 20 },
           ]) || COLORS.COLOR_10
         : COLORS.COLOR_10;
 
-      const node: GridNode = {
-        index: i,
-        x,
-        y,
-        cells: getCells2x2(column, row),
-        neighboursCells: [
-          ...getCells2x2(column + 2, row),
-          ...getCells2x2(column - 2, row),
-          ...getCells2x2(column, row + 2),
-          ...getCells2x2(column, row - 2),
-        ],
+      const D: GridNode = {
+        index: u,
+        x: p,
+        y: m,
+        cells: d(s, r),
+        neighboursCells: [...d(s + 2, r), ...d(s - 2, r), ...d(s, r + 2), ...d(s, r - 2)],
         width: cellWidth * 2 + columnGap,
         height: cellHeight * 2 + rowGap,
-        neighbours: [
-          i + 1, i + rows + 1, i + rows, i + rows - 1,
-          i - 1, i - rows + 1, i - rows - 1, i - rows,
-        ],
-        type,
-        rotation,
-        fill,
-        column,
-        row,
+        neighbours: [u + 1, u + rows + 1, u + rows, u + rows - 1, u - 1, u - rows + 1, u - rows - 1, u - rows],
+        type: E as ShapeType,
+        rotation: S,
+        fill: b,
+        column: s,
+        row: r,
         isNode: true,
       };
 
-      if (node.cells.length === 4) {
-        nodes.push(node);
+      if (D.cells.length === 4) {
+        nodes.push(D);
       }
     }
   }
 
-  // Generate doubles (horizontal and vertical pairs)
-  for (let i = 0; i < totalCells; i++) {
-    const column = Math.floor(i / rows);
-    const row = i % rows;
-    const x = margin.x + cellWidth * column + columnGap * column;
-    const y = margin.y + cellHeight * row + rowGap * row;
+  // Generate doubles (horizontal and vertical pairs) - exactly matching original
+  for (let u = 0; u < totalCells; u++) {
+    const s = Math.floor(u / columns);
+    const r = u % rows;
+    const p = margin.x + cellWidth * s + columnGap * s;
+    const m = margin.y + cellHeight * r + rowGap * r;
 
     // Horizontal doubles
-    if (column < columns - 1) {
-      const horizontalDouble: GridDouble = {
+    if (s < columns - 1) {
+      const S: GridDouble = {
         index: doubles.length,
-        type: SHAPE_TYPES.CIRCLE_HALF,
-        x,
-        y,
+        type: SHAPE_TYPES.CIRCLE_HALF as ShapeType,
+        x: p,
+        y: m,
         width: cellWidth * 2 + columnGap,
-        cells: [getCell(column, row), getCell(column + 1, row)]
-          .filter(cell => cell !== undefined)
-          .map(cell => cell!.index),
+        cells: [i(s, r), i(s + 1, r)].filter(b => b !== undefined).map(b => b!.index),
         neighbours: [],
         neighboursCells: [
-          getCell(column - 1, row - 1),
-          getCell(column, row - 1),
-          getCell(column + 1, row - 1),
-          getCell(column + 2, row - 1),
-          getCell(column + 2, row),
-          getCell(column + 2, row + 1),
-          getCell(column + 1, row + 1),
-          getCell(column, row + 1),
-          getCell(column - 1, row + 1),
-          getCell(column - 1, row),
+          i(s - 1, r - 1),
+          i(s, r - 1),
+          i(s + 1, r - 1),
+          i(s + 2, r - 1),
+          i(s + 2, r),
+          i(s + 2, r + 1),
+          i(s + 1, r + 1),
+          i(s, r + 1),
+          i(s - 1, r + 1),
+          i(s - 1, r),
         ]
-          .filter(cell => cell !== undefined)
-          .map(cell => cell!.index),
+          .filter(b => b !== undefined)
+          .map(b => b!.index),
         height: cellHeight,
         color: '', // Will be set later
-        rotation: rng.pick(SHAPE_ROTATIONS[SHAPE_TYPES.CIRCLE_HALF]),
+        rotation: rng.pick(SHAPE_ROTATIONS[SHAPE_TYPES.CIRCLE_HALF]) || 0,
         fill: rng.weightedSet([
           { value: COLORS.COLOR_30, weight: 80 },
           { value: pickGradient([], rng), weight: 20 },
         ]) || COLORS.COLOR_30,
-        column,
-        row,
+        column: s,
+        row: r,
         isDouble: true,
       };
 
-      if (horizontalDouble.cells.length === 2) {
-        doubles.push(horizontalDouble);
+      if (S.cells.length === 2) {
+        doubles.push(S);
       }
     }
 
     // Vertical doubles
-    if (row < rows - 1) {
-      const verticalDouble: GridDouble = {
+    if (r < rows - 1) {
+      const S: GridDouble = {
         index: doubles.length,
-        type: SHAPE_TYPES.CIRCLE_HALF,
-        x,
-        y,
+        type: SHAPE_TYPES.CIRCLE_HALF as ShapeType,
+        x: p,
+        y: m,
         width: cellWidth,
         height: cellHeight * 2 + rowGap,
-        cells: [getCell(column, row), getCell(column, row + 1)]
-          .filter(cell => cell !== undefined)
-          .map(cell => cell!.index),
+        cells: [i(s, r), i(s, r + 1)].filter(b => b !== undefined).map(b => b!.index),
         neighbours: [],
         neighboursCells: [
-          getCell(column - 1, row - 1),
-          getCell(column, row - 1),
-          getCell(column + 1, row - 1),
-          getCell(column + 1, row),
-          getCell(column + 1, row + 1),
-          getCell(column + 1, row + 2),
-          getCell(column, row + 2),
-          getCell(column - 1, row + 2),
-          getCell(column - 1, row + 1),
-          getCell(column - 1, row),
+          i(s - 1, r - 1),
+          i(s, r - 1),
+          i(s + 1, r - 1),
+          i(s + 1, r),
+          i(s + 1, r + 1),
+          i(s + 1, r + 2),
+          i(s, r + 2),
+          i(s - 1, r + 2),
+          i(s - 1, r + 1),
+          i(s - 1, r),
         ]
-          .filter(cell => cell !== undefined)
-          .map(cell => cell!.index),
+          .filter(b => b !== undefined)
+          .map(b => b!.index),
         fill: rng.weightedSet([
           { value: COLORS.COLOR_30, weight: 80 },
           { value: pickGradient([], rng), weight: 20 },
         ]) || COLORS.COLOR_30,
-        rotation: rng.pick(SHAPE_ROTATIONS[SHAPE_TYPES.CIRCLE_HALF]),
-        column,
-        row,
+        rotation: rng.pick(SHAPE_ROTATIONS[SHAPE_TYPES.CIRCLE_HALF]) || 0,
+        column: s,
+        row: r,
         color: '', // Will be set later
         isDouble: true,
       };
 
-      if (verticalDouble.cells.length === 2) {
-        doubles.push(verticalDouble);
+      if (S.cells.length === 2) {
+        doubles.push(S);
       }
     }
   }
@@ -286,12 +276,12 @@ export function generateGrid(
 }
 
 /**
- * Set color constants
+ * Set color constants using exact blending logic from original script
+ * This matches the ye() function from the original
  */
 export function setColors(backgroundColor: string, foregroundColor: string): void {
-  // This function will be implemented when we port the color blending logic
-  COLORS.COLOR_10 = backgroundColor; // Placeholder
-  COLORS.COLOR_20 = backgroundColor; // Placeholder
-  COLORS.COLOR_30 = backgroundColor; // Placeholder
-  COLORS.COLOR_70 = foregroundColor; // Placeholder
+  COLORS.COLOR_10 = blendColors(backgroundColor, foregroundColor, 0.9);
+  COLORS.COLOR_20 = blendColors(backgroundColor, foregroundColor, 0.8);
+  COLORS.COLOR_30 = blendColors(backgroundColor, foregroundColor, 0.7);
+  COLORS.COLOR_70 = blendColors(backgroundColor, foregroundColor, 0.3);
 }

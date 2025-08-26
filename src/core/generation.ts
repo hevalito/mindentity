@@ -223,7 +223,7 @@ export function getMindentityData(params: MindentityParams = {}): Mindentity {
 }
 
 /**
- * Apply offset transformations to elements
+ * Apply offset transformations to elements - exactly matching original We() function
  */
 function applyOffsets(
   element: any,
@@ -255,107 +255,215 @@ function applyOffsets(
 ): any[] {
   const results = [];
   
-  // Calculate offset for this element
-  let colOffset = (offsetX + offsetsRows[element.row % offsetsRows.length]) % columns;
-  colOffset = colOffset >= 0 ? colOffset : colOffset + columns;
+  // Calculate offsets exactly like original We() function
+  let offsetCol = (offsetX + offsetsRows[element.row]) % columns;
+  offsetCol = offsetCol >= 0 ? offsetCol : offsetCol + columns;
   
-  let rowOffset = (offsetY + offsetsCols[element.column % offsetsCols.length]) % rows;
-  rowOffset = rowOffset >= 0 ? rowOffset : rowOffset + rows;
+  let offsetRow = (offsetY + offsetsCols[element.column]) % rows;
+  offsetRow = offsetRow >= 0 ? offsetRow : offsetRow + rows;
   
   // Calculate new position
-  let newColumn = element.column + colOffset;
-  newColumn = newColumn % columns;
+  let newColumn = element.column;
+  newColumn += offsetCol;
+  newColumn %= columns;
   
-  let newRow = element.row + rowOffset;
-  newRow = newRow % rows;
+  let newRow = element.row;
+  newRow += offsetRow;
+  newRow %= rows;
   
-  const newX = margin.x + cellWidth * newColumn + columnGap * newColumn;
-  const newY = margin.y + cellHeight * newRow + rowGap * newRow;
+  // Helper function to calculate position
+  const getX = (col: number) => margin.x + cellWidth * (((col % columns) + columns) % columns) + columnGap * (((col % columns) + columns) % columns);
+  const getY = (row: number) => margin.y + cellHeight * (((row % rows) + rows) % rows) + rowGap * (((row % rows) + rows) % rows);
   
-  // Check for wrapping and splitting
-  const totalWidth = cellWidth * columns + columnGap * (columns - 1);
-  const totalHeight = cellHeight * rows + rowGap * (rows - 1);
+  const newX = getX(newColumn);
+  const newY = getY(newRow);
   
-  const wrapsHorizontally = element.isDouble && element.width > element.height && newX + element.width > margin.x + totalWidth;
-  const wrapsVertically = element.isDouble && element.width < element.height && newY + element.height > margin.y + totalHeight;
-  const wrapsNode = element.isNode && (newX + element.width > margin.x + totalWidth || newY + element.height > margin.y + totalHeight);
+  // Grid boundaries
+  const gridWidth = cellWidth * columns + columnGap * (columns - 1);
+  const gridHeight = cellHeight * rows + rowGap * (rows - 1);
+  const rightBoundary = margin.x + gridWidth;
+  const bottomBoundary = margin.y + gridHeight;
   
-  if (wrapsHorizontally || wrapsVertically || wrapsNode) {
-    // Handle wrapping by splitting or creating multiple elements
-    if (element.isDouble) {
-      if (wrapsHorizontally) {
-        // Split horizontal double into two quarter circles
-        results.push(
+  // Check wrapping conditions exactly like original
+  const horizontalWrap = element.isDouble && newX + element.width > rightBoundary;
+  const verticalWrap = element.isDouble && newY + element.height > bottomBoundary;
+  const horizontalOffsetMismatch = element.isDouble && element.width > element.height && 
+    Math.abs(offsetsCols[element.column] % rows) !== Math.abs(offsetsCols[element.column + 1] % rows);
+  const verticalOffsetMismatch = element.isDouble && element.width < element.height && 
+    Math.abs(offsetsRows[element.row] % columns) !== Math.abs(offsetsRows[element.row + 1] % columns);
+  const nodeHorizontalWrap = element.isNode && newX + element.width > rightBoundary;
+  const nodeVerticalWrap = element.isNode && newY + element.height > bottomBoundary;
+  
+  const needsHorizontalSplit = horizontalWrap || horizontalOffsetMismatch;
+  const needsVerticalSplit = verticalWrap || verticalOffsetMismatch;
+  const needsNodeSplit = nodeHorizontalWrap || nodeVerticalWrap;
+  
+  if (needsHorizontalSplit) {
+    // Split horizontal double into two quarter circles
+    results.push(
+      {
+        ...element,
+        x: newX,
+        y: newY,
+        isDouble: false,
+        type: SHAPE_TYPES.CIRCLE_QURT,
+        width: cellWidth,
+        height: cellHeight,
+        rotation: element.rotation === 0 ? Math.PI * 0.5 : Math.PI,
+      },
+      {
+        ...element,
+        x: getX(newColumn + 1),
+        y: getY(newRow - offsetsCols[element.column] + offsetsCols[element.column + 1]),
+        isDouble: false,
+        type: SHAPE_TYPES.CIRCLE_QURT,
+        width: cellWidth,
+        height: cellHeight,
+        rotation: element.rotation === 0 ? 0 : Math.PI * 1.5,
+      }
+    );
+  } else if (needsVerticalSplit) {
+    // Split vertical double into two quarter circles
+    results.push(
+      {
+        ...element,
+        x: newX,
+        y: newY,
+        type: SHAPE_TYPES.CIRCLE_QURT,
+        isDouble: false,
+        width: cellWidth,
+        height: cellHeight,
+        rotation: element.rotation === 0 ? Math.PI * 0.5 : 0,
+      },
+      {
+        ...element,
+        x: getX(newColumn - offsetsRows[element.row] + offsetsRows[element.row + 1]),
+        y: getY(newRow + 1),
+        isDouble: false,
+        type: SHAPE_TYPES.CIRCLE_QURT,
+        width: cellWidth,
+        height: cellHeight,
+        rotation: element.rotation === 0 ? Math.PI : Math.PI * 1.5,
+      }
+    );
+  } else if (needsNodeSplit) {
+    // Split node based on type
+    const positions = [
+      { x: newX, y: newY },
+      { x: newX, y: getY(newRow + 1) },
+      { x: getX(newColumn + 1), y: newY },
+      { x: getX(newColumn + 1), y: getY(newRow + 1) },
+    ];
+    
+    if (element.type === SHAPE_TYPES.CROSS || element.type === SHAPE_TYPES.DIAGONAL) {
+      // For CROSS and DIAGONAL, create squares at specific positions
+      const targetPositions = element.type === SHAPE_TYPES.CROSS 
+        ? positions // All positions for cross
+        : element.rotation === 0 
+          ? [positions[0], positions[3]] // Top-left and bottom-right for diagonal
+          : [positions[2], positions[1]]; // Top-right and bottom-left for diagonal
+      
+      targetPositions.forEach(pos => {
+        results.push({
+          ...element,
+          x: pos.x,
+          y: pos.y,
+          width: cellWidth,
+          height: cellHeight,
+          type: SHAPE_TYPES.SQUARE,
+          rotation: 0,
+          isNode: false,
+        });
+      });
+    } else {
+      // For other node types, create appropriate shapes
+      const shapeConfigs = [];
+      
+      if (!nodeHorizontalWrap && nodeVerticalWrap) {
+        // Only vertical wrap
+        shapeConfigs.push(
           {
-            ...element,
-            x: newX,
-            y: newY,
-            width: cellWidth,
+            ...positions[0],
+            type: SHAPE_TYPES.CIRCLE_HALF,
+            rotation: 0,
+            width: element.width,
             height: cellHeight,
-            type: SHAPE_TYPES.CIRCLE_QURT,
-            rotation: element.rotation === 0 ? Math.PI * 0.5 : Math.PI,
-            isDouble: false,
           },
           {
-            ...element,
-            x: margin.x + cellWidth * ((newColumn + 1) % columns) + columnGap * ((newColumn + 1) % columns),
-            y: margin.y + cellHeight * newRow + rowGap * newRow,
-            width: cellWidth,
+            ...positions[1],
+            type: SHAPE_TYPES.CIRCLE_HALF,
+            rotation: Math.PI,
+            width: element.width,
             height: cellHeight,
-            type: SHAPE_TYPES.CIRCLE_QURT,
-            rotation: element.rotation === 0 ? 0 : Math.PI * 1.5,
-            isDouble: false,
           }
         );
-      } else if (wrapsVertically) {
-        // Split vertical double into two quarter circles
-        results.push(
+      } else if (nodeHorizontalWrap && !nodeVerticalWrap) {
+        // Only horizontal wrap
+        shapeConfigs.push(
           {
-            ...element,
-            x: newX,
-            y: newY,
+            ...positions[0],
+            type: SHAPE_TYPES.CIRCLE_HALF,
+            rotation: 0,
             width: cellWidth,
-            height: cellHeight,
-            type: SHAPE_TYPES.CIRCLE_QURT,
-            rotation: element.rotation === 0 ? Math.PI * 0.5 : 0,
-            isDouble: false,
+            height: element.height,
           },
           {
-            ...element,
-            x: margin.x + cellWidth * newColumn + columnGap * newColumn,
-            y: margin.y + cellHeight * ((newRow + 1) % rows) + rowGap * ((newRow + 1) % rows),
+            ...positions[2],
+            type: SHAPE_TYPES.CIRCLE_HALF,
+            rotation: Math.PI,
+            width: cellWidth,
+            height: element.height,
+          }
+        );
+      } else {
+        // Both wraps - create quarter circles
+        shapeConfigs.push(
+          {
+            ...positions[2],
+            type: SHAPE_TYPES.CIRCLE_QURT,
+            rotation: 0,
             width: cellWidth,
             height: cellHeight,
+          },
+          {
+            ...positions[0],
             type: SHAPE_TYPES.CIRCLE_QURT,
-            rotation: element.rotation === 0 ? Math.PI : Math.PI * 1.5,
-            isDouble: false,
+            rotation: Math.PI * 0.5,
+            width: cellWidth,
+            height: cellHeight,
+          },
+          {
+            ...positions[1],
+            type: SHAPE_TYPES.CIRCLE_QURT,
+            rotation: Math.PI,
+            width: cellWidth,
+            height: cellHeight,
+          },
+          {
+            ...positions[3],
+            type: SHAPE_TYPES.CIRCLE_QURT,
+            rotation: Math.PI * 1.5,
+            width: cellWidth,
+            height: cellHeight,
           }
         );
       }
-    } else if (element.isNode) {
-      // Split node into individual cells
-      const positions = [
-        { col: newColumn, row: newRow },
-        { col: (newColumn + 1) % columns, row: newRow },
-        { col: (newColumn + 1) % columns, row: (newRow + 1) % rows },
-        { col: newColumn, row: (newRow + 1) % rows },
-      ];
       
-      positions.forEach(pos => {
+      shapeConfigs.forEach(config => {
         results.push({
           ...element,
-          x: margin.x + cellWidth * pos.col + columnGap * pos.col,
-          y: margin.y + cellHeight * pos.row + rowGap * pos.row,
-          width: cellWidth,
-          height: cellHeight,
-          type: element.type === SHAPE_TYPES.CROSS || element.type === SHAPE_TYPES.DIAGONAL ? SHAPE_TYPES.SQUARE : element.type,
-          rotation: 0,
+          x: config.x,
+          y: config.y,
+          width: config.width,
+          height: config.height,
+          type: config.type,
+          rotation: config.rotation,
           isNode: false,
         });
       });
     }
   } else {
-    // No wrapping, use element as-is with new position
+    // No wrapping needed
     results.push({
       ...element,
       x: newX,
