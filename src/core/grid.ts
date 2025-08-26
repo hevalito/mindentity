@@ -60,8 +60,8 @@ export function generateGrid(
   const nodes: GridNode[] = [];
   const doubles: GridDouble[] = [];
 
-  let cellWidth = (width - margin.x * 2 - (columns - 1) * columnGap) / columns;
-  let cellHeight = (height - margin.y * 2 - (rows - 1) * rowGap) / rows;
+  const cellWidth = (width - margin.x * 2 - (columns - 1) * columnGap) / columns;
+  const cellHeight = (height - margin.y * 2 - (rows - 1) * rowGap) / rows;
 
   const cellTypes = [SHAPE_TYPES.SQUARE, SHAPE_TYPES.CIRCLE_QURT];
   const totalCells = columns * rows;
@@ -141,7 +141,7 @@ export function generateGrid(
       const type = rng.pick(nodeTypes) as ShapeType;
       const rotation = rng.pick(SHAPE_ROTATIONS[type]);
 
-      let excludedGradients: string[] = [];
+      const excludedGradients: string[] = [];
       if (type === SHAPE_TYPES.DIAGONAL) {
         if (rotation === 0) {
           excludedGradients.push(GRADIENT_URLS.TOP_RIGHT, GRADIENT_URLS.BOTTOM_LEFT);

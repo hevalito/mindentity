@@ -130,16 +130,16 @@ export function addRoundedCorners(
     return path;
   }
 
-  let commands = parsePathData(path).filter(cmd => cmd[0] !== 'Z');
+  const commands = parsePathData(path).filter(cmd => cmd[0] !== 'Z');
   const newCommands: string[] = [];
 
   for (let i = 0; i < commands.length; i++) {
     const nextIndex = (i + 1) % commands.length;
     const afterNextIndex = (i + 2) % commands.length;
 
-    let [, x1, y1] = commands[i];
-    let [, x2, y2] = commands[nextIndex];
-    let [, x3, y3] = commands[afterNextIndex];
+    const [, x1, y1] = commands[i];
+    const [, x2, y2] = commands[nextIndex];
+    const [, x3, y3] = commands[afterNextIndex];
 
     const p1 = { x: x1, y: y1 };
     const p2 = { x: x2, y: y2 };
@@ -156,7 +156,7 @@ export function addRoundedCorners(
     );
 
     const currentRadius = Array.isArray(radius) ? radius[i] : radius;
-    let r = Math.min(currentRadius, v1.mag / 2, v2.mag / 2);
+    const r = Math.min(currentRadius, v1.mag / 2, v2.mag / 2);
 
     if (currentRadius === 0) {
       newCommands.push(`L ${p1.x} ${p1.y}`);
